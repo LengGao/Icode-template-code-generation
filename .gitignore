@@ -1,7 +1,8 @@
 .DS_Store
 node_modules
 /dist
-compiler
+/compiler
+
 
 # local env files
 .env.local
