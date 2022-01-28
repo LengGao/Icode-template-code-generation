@@ -7,7 +7,7 @@
     typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
     typeof define === 'function' && define.amd ? define(factory) :
     (global = global || self, global.Vue = factory());
-  }(this, function () { 'use strict';
+  }(this, function () { 
   
     /*  */
   
@@ -6625,7 +6625,6 @@
       var isDestroy = vnode === emptyNode;
       var oldDirs = normalizeDirectives$1(oldVnode.data.directives, oldVnode.context);
       var newDirs = normalizeDirectives$1(vnode.data.directives, vnode.context);
-  
       var dirsWithInsert = [];
       var dirsWithPostpatch = [];
   
@@ -6949,7 +6948,7 @@
         }
       }
   
-      return expression
+      return expression 
     }
   
     function wrapFilter (exp, filter) {
@@ -10962,10 +10961,6 @@
   
     /*  */
   
-  
-  
-  
-  
     var CodegenState = function CodegenState (options) {
       this.options = options;
       this.warn = options.warn || baseWarn;
@@ -11028,7 +11023,7 @@
         // module transforms
         for (var i = 0; i < state.transforms.length; i++) {
           code = state.transforms[i](el, code);
-        }
+        }        
         return code
       }
     }
@@ -11215,6 +11210,7 @@
       // v-bind dynamic argument wrap
       // v-bind with dynamic arguments must be applied using the same v-bind object
       // merge helper so that class/style/mustUseProp attrs are handled correctly.
+
       if (el.dynamicAttrs) {
         data = "_b(" + data + ",\"" + (el.tag) + "\"," + (genProps(el.dynamicAttrs)) + ")";
       }
@@ -11690,8 +11686,6 @@
     }
   
     /*  */
-  
-  
   
     function createFunction (code, errors) {
       try {

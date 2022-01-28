@@ -1,12 +1,11 @@
 /**
  *  反编译 AST
  */
-const fs = require('fs')
-const path = require('path')
-
-function isPromise(obj) {
-    return (obj !== undefined && obj !== null && typeof obj.then === 'function' && typeof obj.catch === 'function')
-}
+import fs, { stat }  from 'fs'
+import { type } from 'os';
+import path  from 'path'
+const __dirname = path.resolve()
+import data  from './data.mjs'
 
 function makeMap(str, expectsLowerCase) {
     var map = Object.create(null);
@@ -32,37 +31,27 @@ const isHTMLTag = makeMap(
     'output,progress,select,textarea,' +
     'details,dialog,menu,menuitem,summary,' +
     'content,element,shadow,template,blockquote,iframe,tfoot'
-);
+)
+
+const isReservedAttribute = makeMap('key,ref,slot,slot-scope,is')
 
 const target = path.join(__dirname,'templateCodeGenerator.vue')
 
 const callbacks = ['close', 'style', 'script', 'template'], templateStack = [], scriptStack = [], styleStack = []
 
-const getTagEndReg = /(>|\/>)$/
-
 const parseDescriptionMap = {
-    tag: null,
-    key: null,
     class: deClass,
-    style: null,
-    attrs: null,
+    style: deStyle,
+    attrs: deAttrs,
+    directives: deDirectives,
     props: null,
-    domProps: null,
     on: null,
     hook: null,
-    nativeOn: null,
-    directives: null,
-    staticClass: null,
-    staticStyle: null,
-    ref: null,
     refInFor: null,
-    childrens: null,
-    show: null,
     slot: null,
     scopedSlots: null,
     keepAlive: null,
     transition: null,
-    inlineTemplate: null,
 }
 
 const ELEMENT_TYPES = {
@@ -70,13 +59,121 @@ const ELEMENT_TYPES = {
     'a': parseSelect
 }
 
+const getTagEndReg = /(>|\/>)$/,
+      classSpellReg = /class\s*=\s*?/
+
+function isPromise(obj) {
+    return (obj !== undefined && obj !== null && typeof obj.then === 'function' && typeof obj.catch === 'function')
+}
+
+function isObject(obj) {
+    return Object.prototype.toString.call(obj) === '[object Object]'
+}
+
+function hasOwnProperty(obj, key) {
+    return obj.hasOwnProperty(key)
+}
+
+function emptyObject(obj) {
+    for (const key in obj) { return false }
+    return true
+}
+
+/**
+ * 指定位置拼接字符
+ * @param {RegExp} regexp 匹配正则
+ * @param {*} insert 要拼接的内容
+ * @param {String} source 原字符串 
+ * @returns String
+ */
+function spell(regexp, insert ,source) {
+    let matchRes = source.match(regexp), end = source.length, start = 1
+    if (!matchRes) throw new Error(`正则未匹配: ${[...arguments]}`)
+    start += matchRes['index'] + matchRes['0'].length
+    return source.substring(0, start) + insert.toString() + source.substring(start, end)
+}
+
+/**
+ * 样式内容拼接
+ * @param {object} styleVal 具体选择器内的样式内容 
+ * @returns String
+ */
+
+function styleSpell(styleVal) {
+    return JSON.stringify(styleVal)
+           .replace(/"|"/g, ``)
+           .replace(/{/g, `{\n\t`)
+           .replace(/}/g, `\n}\n`)
+           .replace(/:/g, `: `)
+           .replace(/,/g, `;\n\t`)
+}
+
+/**
+ * 反编译指令
+ * @param {string} name 
+ * @param {any} value 
+ * @param {any} expression 
+ * @param {string} arg 
+ * @param {string} oldArg 
+ * @param {string: boolean} modifiers 
+ * @param {any} oldValue 
+ */
+function deDirectives(context, directivesDesc) {
+    return context
+}
 
 
-function deClass(context, classDesc) {
-    for (let key in classDesc) {
-        context = context.replace(getTagEndReg, ` ${key}="${classDesc[key]}"${"$1"}`)
+function deProps(context, propsDesc) {
+    return context
+}
+
+/**
+ * 反编译attrs
+ * @param {string} context 
+ * @param {Array} attrsDesc 
+ * @returns String
+ */
+function deAttrs(context, attrsDesc) {
+    for (let i = 0; i < attrsDesc.length; i++) {
+        const attr = attrsDesc[i];
+        context = context.replace(getTagEndReg, ` ${attr['name']}="${attr['value']}"${"$1"}`)
     }
     return `${context}`
+}
+
+/**
+ * 反编译style
+ * @param {string} context 当前正在编译的元素字符串模板
+ * @param {Object} styleDesc 样式类对象
+ * @returns String
+ */
+function deStyle(context, styleDesc) {
+    for (let key in styleDesc) {
+        context = context.replace(getTagEndReg, ` ${key}="${styleDesc[key]}" ${"$1"}`)
+    }
+    return context
+}
+
+/**
+ * 反编译class
+ * @param {string} context 当前正在编译的元素字符串模板
+ * @param {Object} classDesc 样式类对象
+ * @returns String
+ */
+function deClass(context, classDesc) {
+    const has = context.search(classSpellReg)
+    if (has == -1) { context = context.replace(getTagEndReg, ` class=""${"$1"}`) }
+    for (let key in classDesc) {
+        context = spell(classSpellReg, key, context)
+        const cld = classDesc[key]
+        if (typeof cld !== 'object') continue;
+        if (emptyObject(cld)) {
+            cld["sel"] = `.${key}`
+            cld['cnt'] = {}
+        }
+        pushTargetStack('style', cld)
+    }
+    return context
 }
 
 function parseSelect(description) {
@@ -93,6 +190,20 @@ function parseSelect(description) {
         }
     }
     templateStack.push(current)
+}
+
+function parseScript(content) {
+    return content
+}
+
+// 暂不支持sass
+function parseStyle(content) {
+    let len = styleStack.length
+    for(let i = 0; i < len; i++) {
+        const styleObj = styleStack[i]
+        content += `${styleObj['sel']} ${styleSpell(styleObj['cnt'])}\n`
+    }
+    return content
 }
 
 /**
@@ -123,11 +234,26 @@ function deCompile(description, indentation) {
             if (description.childrens) deCompileArray(description.childrens)
             pushTargetStack('template', `${indentation ? indentation : ''}</${key}>`)
         }
+    } 
+}
+
+
+function executorData(part, stack) {
+    if (part === 'template') { return `<${part}> \n ${stack.join('\n')} \n </${part}> \n` }
+    let content = ''
+    if (part === 'script') {
+        return `<${part}> \n export default {\n\t${parseScript(content)}\n}\n </${part}> \n`
+    } else if (part === 'style') {
+        return `<${part} scoped> \n${parseStyle(content)}</${part}> \n`
     }
 }
 
+function close(fd) {
+    fs.close(fd)
+}
+
 function wirter(fd, part, callbacks) {
-    let data = '', stack = []
+    let data = '', stack = undefined
     switch (part) {
         case 'template': stack = templateStack; break;
         case 'script': stack = scriptStack; break;
@@ -141,17 +267,9 @@ function wirter(fd, part, callbacks) {
     })
 }
 
-function close(fd) {
-    fs.close(fd)
-}
-
 function executor(fd, callbacks) {
     const part = callbacks.pop()
     if (part) wirter.call(this, fd, part, callbacks)
-}
-
-function executorData(part, stack) {
-    return`<${part}> \n ${stack.join('\n')} \n </${part}> \n`
 }
 
 function open(target) {
@@ -170,50 +288,19 @@ function main(description) {
     open(target)
 }
 
-let description = {
-    tag: 'select',
-    'class': {
-        foo: true,
-        bar: false
-    },
-    childrens: [
-        {
-            tag: 'a',
-            'class': {
-                foo: true,
-                bar: false
-            }
-        }
-    ],
-    on: {
-        click: this.clickHandler
-    },
-    directives: [
-        {
-            name: 'my-custom-directive',
-            value: '2',
-            expression: '1 + 1',
-            arg: 'foo',
-            modifiers: {bar: true}
-        }
-    ],
-}
+main(data)
 
-main(description)
+export default main
 
-module.exports.main = main
 
 /**
- * 实现步骤
- * 先用读写流写入vue文件三个部分
- *  编写写入流函数分别要定位它们的位置以便于后面准确插入
- * 再解析配置项目分别插入对应部分
- *  分批次实现对应内容反编译
+ *  * 实施问题
+ * 插入部分到底要不要用栈这个还没有想好
+ * 为了应对不同的UI框架 makeMap要转变为高阶函数，
  */
 
 /**
- * 实施问题
- * 插入部分到底要不要用栈这个还没有想好
+ * 注意
  * 
  * yield * 通过实验发现，yield后的表达式不会立即求值，而是再generator生成的迭代器对象iterator.next()方法调用后求值
  * 其求值结果作为iteratorResult对象{value: '', done: ''}value属性的值，

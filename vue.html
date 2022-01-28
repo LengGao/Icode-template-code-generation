@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>vue</title>
+    <script src="./vue2.6.14.js"></script>
+</head>
+<style type="text/css">
+    .a1 {
+        color: red;
+    }
+    .a2 {
+        color: green;
+    }
+</style>
+
+<body>
+    <div id='app'>
+        <span v-if="show" :title="1 + 1" :class="a + 1">hello</span>
+        <span v-else="show" :title="'b' + 1" :class="1 + b">hello</span>
+        <button @click="onClick">点我</button>
+    </div>
+
+    <script>
+
+        new Vue({
+            el: '#app',
+            data: {
+                a: '1',
+                b: '2',
+                show: false
+            },
+            methods: {
+                onClick() {
+                    this.show = !this.show
+                }
+            }
+        })
+
+    </script>
+</body>
+</html>

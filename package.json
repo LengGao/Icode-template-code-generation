@@ -2,17 +2,20 @@
   "name": "template-code-generation",
   "version": "1.0.0",
   "description": "TemplateCodeGeneration 代码生成器",
-  "main": "index.js",
+  "main": "main.js",
   "scripts": {
     "dev": "webpack serve",
     "watch": "webpack --watch",
     "build": "webpack",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "do": "node ./main.js",
+    "test": "jest main.test.js --config=jest.config.js"
   },
   "keywords": [],
   "author": "LengGao",
   "license": "ISC",
+  "type": "module",
   "dependencies": {
+    "@types/jest": "^27.4.0",
     "vue": "^2.6.14",
     "vue-router": "^3.5.3",
     "vuex": "^3.6.2"
