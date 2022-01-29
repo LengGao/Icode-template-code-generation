@@ -1,8 +1,7 @@
 /**
  *  反编译 AST
  */
-import fs, { stat }  from 'fs'
-import { type } from 'os';
+import fs from 'fs'
 import path  from 'path'
 const __dirname = path.resolve()
 import data  from './data.mjs'
@@ -43,8 +42,8 @@ const parseDescriptionMap = {
     class: deClass,
     style: deStyle,
     attrs: deAttrs,
+    props: deProps,
     directives: deDirectives,
-    props: null,
     on: null,
     hook: null,
     refInFor: null,
@@ -122,8 +121,16 @@ function deDirectives(context, directivesDesc) {
     return context
 }
 
-
 function deProps(context, propsDesc) {
+    let i, key, temp = {}, stack = scriptStack
+    if (Array.isArray(propsDesc)) {
+        for (i = 0; i < propsDesc.length; i++) {
+            key = propsDesc[i]
+            temp[key] = {type: null}
+        }
+        propsDesc = temp
+    }
+    stack.push(stack)
     return context
 }
 
@@ -138,7 +145,7 @@ function deAttrs(context, attrsDesc) {
         const attr = attrsDesc[i];
         context = context.replace(getTagEndReg, ` ${attr['name']}="${attr['value']}"${"$1"}`)
     }
-    return `${context}`
+    return context
 }
 
 /**
@@ -193,14 +200,18 @@ function parseSelect(description) {
 }
 
 function parseScript(content) {
+    const stack = scriptStack, len = stack.length, taget = {data: {}}
+    for (let i = 0; i < len; i++) {
+        taget = Object.assign(target, stack[i])
+    }
     return content
 }
 
 // 暂不支持sass
 function parseStyle(content) {
-    let len = styleStack.length
+    let stack = styleStack,  len = stack.length
     for(let i = 0; i < len; i++) {
-        const styleObj = styleStack[i]
+        const styleObj = stack[i]
         content += `${styleObj['sel']} ${styleSpell(styleObj['cnt'])}\n`
     }
     return content
@@ -237,14 +248,13 @@ function deCompile(description, indentation) {
     } 
 }
 
-
 function executorData(part, stack) {
-    if (part === 'template') { return `<${part}> \n ${stack.join('\n')} \n </${part}> \n` }
+    if (part === 'template') { return `<${part}>\n${stack.join('\n')}\n</${part}>\n` }
     let content = ''
     if (part === 'script') {
-        return `<${part}> \n export default {\n\t${parseScript(content)}\n}\n </${part}> \n`
+        return `<${part}>\nexport default {\n\t${parseScript(content)}\n}\n</${part}>\n`
     } else if (part === 'style') {
-        return `<${part} scoped> \n${parseStyle(content)}</${part}> \n`
+        return `<${part} scoped>\n${parseStyle(content)}</${part}>\n`
     }
 }
 

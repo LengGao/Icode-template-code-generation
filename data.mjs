@@ -14,10 +14,8 @@ let vnode = {
     tag: 'select',    
     class: {'red': {sel: '.red', cnt: {"margin": '50px;'}}},
     style: {'font-size': '12px'},
-    attrs: [{
-        name: 'title',
-        value: 'select'
-    }],
+    attrs: [{name: 'title', value: 'select'}],
+    props: {name: String, age: Number},
     childrens: [{ tag: 'a', 'class': {'foo': {}}} ],
     directives: [{
         name: 'my-custom-directive',
