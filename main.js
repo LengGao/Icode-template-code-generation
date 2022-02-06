@@ -2,6 +2,7 @@
  *  反编译 AST
  */
 import fs from 'fs'
+import { type } from 'os';
 import path  from 'path'
 const __dirname = path.resolve()
 import data  from './data.mjs'
@@ -14,8 +15,9 @@ function makeMap(str, expectsLowerCase) {
 }
 
 const isDescription = makeMap(
-    'tag,key,slot,scopedSlots,ref,refInFor,staticClass,class,staticStyle,style,props,childrens,'+
-    'attrs,domProps,hook,on,nativeOn,transition,show,inlineTemplate,directives,keepAlive'
+    'tag,key,slot,scopedSlots,ref,refInFor,staticClass,class,staticStyle,style,'+
+    'props,data,childrens,methods,attrs,domProps,hook,on,nativeOn,'+
+    'transition,show,inlineTemplate,directives,keepAlive'
 )
 
 const isHTMLTag = makeMap(
@@ -36,7 +38,16 @@ const isReservedAttribute = makeMap('key,ref,slot,slot-scope,is')
 
 const target = path.join(__dirname,'templateCodeGenerator.vue')
 
-const callbacks = ['close', 'style', 'script', 'template'], templateStack = [], scriptStack = [], styleStack = []
+const callbacks = ['close', 'style', 'script', 'template'],
+      templateStack = [],
+      styleStack = [],
+      scriptHeap = new Map(),
+      handlerSet = {
+        'add': (key, val) => scriptHeap.set(key, val),
+        'del': (key) => scriptHeap.delete(key),
+        'edit': (key, val) => scriptHeap.set(key, val),
+        'query': (key) => scriptHeap.get(key)
+     }
 
 const parseDescriptionMap = {
     class: deClass,
@@ -44,7 +55,9 @@ const parseDescriptionMap = {
     attrs: deAttrs,
     props: deProps,
     directives: deDirectives,
-    on: null,
+    on: deEvent,
+    methods: deMethods,
+    data: deData,
     hook: null,
     refInFor: null,
     slot: null,
@@ -59,7 +72,34 @@ const ELEMENT_TYPES = {
 }
 
 const getTagEndReg = /(>|\/>)$/,
-      classSpellReg = /class\s*=\s*?/
+      classSpellReg = /class\s*=\s*?/,
+      handlerReg = /handler\s?|function\s?/,
+      indentReg = /^\u0020{4}/mg
+      
+    
+const scriptParseUtils = {
+    "props": function (options) {
+        let str = ''
+        for (const key in options) {
+            const type = options[key]
+            str += `\t\t${key}: ${typeof type === 'function' ? type.name : type},\n`
+        }
+        return str
+    },
+    "methods": function (options) {
+        let str = ''
+        for (const key in options) {
+            str += `\t\t${options[key].toString()},\n`
+        }
+        return str
+    },
+    "data": function (options) {
+        const data = options.data, aspect = options.handler, reg = /handler\b.*\b.*\{|function\b.*\b.*\{/
+        let objJSON, str = aspect.toString().replace(reg, "").slice(0, -1).trim().replace(indentReg, '')
+        objJSON = ObjectToJSON(data)
+        return `\t\t${str}\n\t\treturn {${objJSON}\n\t\t}`
+    }
+}
 
 function isPromise(obj) {
     return (obj !== undefined && obj !== null && typeof obj.then === 'function' && typeof obj.catch === 'function')
@@ -78,6 +118,13 @@ function emptyObject(obj) {
     return true
 }
 
+function ObjectToJSON(obj) {
+    let target = ''
+    for (const key in obj) {
+        target += `\n\t\t\t${key}: ${obj[key].replace('#', '')},`
+    }
+    return target
+}
 /**
  * 指定位置拼接字符
  * @param {RegExp} regexp 匹配正则
@@ -97,7 +144,6 @@ function spell(regexp, insert ,source) {
  * @param {object} styleVal 具体选择器内的样式内容 
  * @returns String
  */
-
 function styleSpell(styleVal) {
     return JSON.stringify(styleVal)
            .replace(/"|"/g, ``)
@@ -105,6 +151,12 @@ function styleSpell(styleVal) {
            .replace(/}/g, `\n}\n`)
            .replace(/:/g, `: `)
            .replace(/,/g, `;\n\t`)
+}
+
+function mapToObject(map) {
+    let obj = Object.create(null)
+    for (let [key, val] of map) { obj[key] = val }
+    return obj
 }
 
 /**
@@ -118,11 +170,38 @@ function styleSpell(styleVal) {
  * @param {any} oldValue 
  */
 function deDirectives(context, directivesDesc) {
+    return context  
+}
+
+function deData(context, dataDesc) {
+    scriptHeap.set('data',dataDesc)
     return context
 }
 
+
+function deEvent(content, eventDesc) {
+    let methods = scriptHeap.get('methods')
+    if (methods === undefined) { methods = {}; }
+    for (let i = 0; i < eventDesc.length; i++) {
+        const {type, name, args, handler} = eventDesc[i]
+        if (hasOwnProperty(methods, name)) {
+            throw new Error(`${name}方法已存在`)
+        } else {
+            content = content.replace(getTagEndReg, ` @${type}="${name}(${[...args]})" $1`)
+            methods[name] = handler.toString().replace(handlerReg, name).replace(indentReg, '')
+        }
+    }
+    scriptHeap.set("methods", methods)
+    return content
+}
+
+function deMethods(content, methods) {
+    scriptHeap.set("methods", methods)
+    return content
+}
+
 function deProps(context, propsDesc) {
-    let i, key, temp = {}, stack = scriptStack
+    let i, key, temp = Object.create(null)
     if (Array.isArray(propsDesc)) {
         for (i = 0; i < propsDesc.length; i++) {
             key = propsDesc[i]
@@ -130,7 +209,7 @@ function deProps(context, propsDesc) {
         }
         propsDesc = temp
     }
-    stack.push(stack)
+    operateHeap('add', {props: propsDesc})
     return context
 }
 
@@ -176,7 +255,7 @@ function deClass(context, classDesc) {
         if (typeof cld !== 'object') continue;
         if (emptyObject(cld)) {
             cld["sel"] = `.${key}`
-            cld['cnt'] = {}
+            cld['cnt'] = Object.create(null)
         }
         pushTargetStack('style', cld)
     }
@@ -199,40 +278,22 @@ function parseSelect(description) {
     templateStack.push(current)
 }
 
-function parseScript(content) {
-    const stack = scriptStack, len = stack.length, taget = {data: {}}
-    for (let i = 0; i < len; i++) {
-        taget = Object.assign(target, stack[i])
-    }
-    return content
-}
-
-// 暂不支持sass
-function parseStyle(content) {
-    let stack = styleStack,  len = stack.length
-    for(let i = 0; i < len; i++) {
-        const styleObj = stack[i]
-        content += `${styleObj['sel']} ${styleSpell(styleObj['cnt'])}\n`
-    }
-    return content
-}
-
-/**
- * @param {String} part template/script/style
- * @param {String} content <xx>
- */
-function pushTargetStack(part, content) {
-    switch (part) {
-        case 'template': templateStack.push(content); break;
-        case 'script': scriptStack.push(content); break;
-        case 'style': styleStack.push(content); break;
-    }
-}
-
 function deCompileArray(childrens) {
     for (let i = 0; i < childrens.length; i++) {
         const description = childrens[i];
         deCompile(description, '\t');
+    }
+}
+
+/**
+ * 待修正
+ * @param {String} part template/script/style
+ * @param {String | Object} content 标签与样式
+ */
+ function pushTargetStack(part, content) {
+    switch (part) {
+        case 'template': templateStack.push(content); break;
+        case 'style': styleStack.push(content); break;
     }
 }
 
@@ -248,13 +309,60 @@ function deCompile(description, indentation) {
     } 
 }
 
+/**
+ * 操作script集合
+ * @param {String} operation 操作类型：add, del, edit, query
+ * @param {Object} content 删除传key
+ */
+ function operateHeap(operation, content) {   
+    const handler = handlerSet[operation]
+    if (!handler) throw new Error('只接受 add, del, edit, query')
+    if (typeof content === 'string') {
+        if (!handler(content)) throw new Error(`删除失败`)
+    }
+    for (let key in content) {
+        handler(key, content[key])
+    }
+}
+
+function mapToJSON(map) {
+    let obj = mapToObject(map), content = ''
+    for (const key in obj) {
+        if (key === 'data') {
+            content += `\t${key}() {\n${scriptParseUtils[key](obj[key])}\n\t},\n`
+        } else {
+            content += `\t${key}: {\n${scriptParseUtils[key](obj[key])}\t},\n`
+        }
+    }
+    return content
+}
+
+function parseTemplate(stack) {
+    return stack.join('\n')
+}
+
+function parseScript(stack) {
+    let heap = stack, script = mapToJSON(heap)
+    return script
+}
+
+// 暂不支持sass
+function parseStyle(stack) {
+    let content = '', len = stack.length
+    for(let i = 0; i < len; i++) {
+        const styleObj = stack[i]
+        content += `${styleObj['sel']} ${styleSpell(styleObj['cnt'])}\n`
+    }
+    return content
+}
+
 function executorData(part, stack) {
-    if (part === 'template') { return `<${part}>\n${stack.join('\n')}\n</${part}>\n` }
-    let content = ''
-    if (part === 'script') {
-        return `<${part}>\nexport default {\n\t${parseScript(content)}\n}\n</${part}>\n`
+    if (part === 'template') { 
+        return `<${part}>\n${parseTemplate(stack)}\n</${part}>\n`
+    } else if (part === 'script') {
+        return `<${part}>\nexport default {\n${parseScript(stack)}\n}\n</${part}>\n`
     } else if (part === 'style') {
-        return `<${part} scoped>\n${parseStyle(content)}</${part}>\n`
+        return `<${part} scoped>\n${parseStyle(stack)}</${part}>\n`
     }
 }
 
@@ -263,10 +371,10 @@ function close(fd) {
 }
 
 function wirter(fd, part, callbacks) {
-    let data = '', stack = undefined
+    let stack, data = ''
     switch (part) {
         case 'template': stack = templateStack; break;
-        case 'script': stack = scriptStack; break;
+        case 'script': stack = scriptHeap; break;
         case 'style': stack = styleStack; break;
         default: return close(fd);
     }
@@ -289,24 +397,23 @@ function open(target) {
     })
 }
 
-function init(description) {
+function main(target, description) {
     deCompile(description)
-}
-
-function main(description) {
-    init(description)
     open(target)
 }
 
-main(data)
+main(target, data)
 
 export default main
 
-
 /**
- *  * 实施问题
- * 插入部分到底要不要用栈这个还没有想好
+ * 存档
  * 为了应对不同的UI框架 makeMap要转变为高阶函数，
+ * 脚本解析，考虑data函数的合并，以及其他内容的合并, Object.assign不行，props会合并带哦
+ * scriptHeap[]
+ * 1, data, props, mehdos, hooks, watch ...
+ * pushTarget有缺陷，比如推入的是一个标签但是只能推入看是标签
+ * 
  */
 
 /**

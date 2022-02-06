@@ -16,6 +16,30 @@ let vnode = {
     style: {'font-size': '12px'},
     attrs: [{name: 'title', value: 'select'}],
     props: {name: String, age: Number},
+    methods: {
+        hello() { let say = 'hi'; console.log("hello"); }
+    },
+    on: [
+        {
+            type: 'change',
+            name: 'onChange',
+            args: ["hello", "'1 + 1'"],
+            handler (event) {
+                let e = function () {
+                    console.log('onChange');
+                }
+            }
+        }
+    ],
+    data: {
+        handler() {
+            console.log('1');
+            let i = function () {
+                let d = new Date()
+            }
+        },
+        data: {a: 'a', b: 'v', c: `#function () {}`, d: `#new Date()`}
+    },
     childrens: [{ tag: 'a', 'class': {'foo': {}}} ],
     directives: [{
         name: 'my-custom-directive',
@@ -25,6 +49,5 @@ let vnode = {
         modifiers: {bar: true}
     }]
 }
-
 
 export default vnode
